@@ -573,6 +573,19 @@
         function isCountableTask(task) { return true; }
         function filterCountableTasks(tasks) { return tasks; }
 
+        /* ============================================================
+           ANALYTICS FILTER — Personal tasks are EXCLUDED from all
+           AI analysis, charts, Execution Meter and Daily Summary.
+           (The Consistency Heatmap Matrix below intentionally uses
+           ALL tasks and does not use this helper.)
+        ============================================================ */
+        function isGeneralTask(task) {
+            return (task && (task.type || 'General')) === 'General';
+        }
+        function filterAnalyticsTasks(tasks) {
+            return filterCountableTasks(tasks || []).filter(isGeneralTask);
+        }
+
         function initApp() {
             const now = new Date();
             state.viewYear = now.getFullYear();
@@ -928,6 +941,8 @@
 
                 const tasks = state.tasksByDay[dKey] || [];
                 tasks.forEach(t => {
+                    // AI analytics consumes GENERAL tasks only (Personal tasks excluded)
+                    if (!isGeneralTask(t)) return;
                     const norm = (t.text || '').trim().toLowerCase();
                     if (!norm || norm.includes('new task') || norm.includes('new objective')) return;
                     if (!taskMap[norm]) {
@@ -953,7 +968,7 @@
             container.innerHTML = '';
 
             if (taskList.length === 0) {
-                container.innerHTML = `<div class="text-xs text-slate-500 p-3 text-center font-mono">No objective data available for analysis.</div>`;
+                container.innerHTML = `<div class="text-xs text-slate-500 p-3 text-center font-mono">No general objective data available for analysis.</div>`;
                 return;
             }
 
@@ -972,7 +987,7 @@
             }
 
             if (insights.length === 0) {
-                container.innerHTML = `<div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300">All objectives are on track!</div>`;
+                container.innerHTML = `<div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300">All general objectives are on track!</div>`;
                 return;
             }
 
@@ -1003,15 +1018,14 @@
             for (let day = 1; day <= daysInMonth; day++) {
                 const dateKey = formatDateKey(state.viewYear, state.viewMonth, day);
                 const allTasks = state.tasksByDay[dateKey] || [];
-                const tasks = filterCountableTasks(allTasks);
+                // Analytics consumes GENERAL tasks only (Personal tasks excluded)
+                const tasks = filterAnalyticsTasks(allTasks);
                 const dateObj = new Date(state.viewYear, state.viewMonth, day);
                 const dayOfWeek = dateObj.getDay();
                 const isPastOrToday = isDateOnOrBefore(dateKey, today);
 
-                allTasks.forEach(t => {
-                    const c = t.type === 'Personal' ? 'Personal' : 'General';
-                    categoryCounts[c]++;
-                });
+                // Category distribution is derived from the same General-only pool
+                categoryCounts.General += tasks.length;
 
                 let dayYield = 0;
                 if (isPastOrToday && tasks.length > 0) {
@@ -1020,7 +1034,7 @@
                 }
 
                 const sleepLog = state.sleepByDay[dateKey];
-                if (sleepLog && isPastOrToday) {
+                if (sleepLog && isPastOrToday && tasks.length > 0) {
                     let h = typeof sleepLog === 'object' ? sleepLog.hoursNum : parseFloat(sleepLog) || 0;
                     if (h > 0) {
                         sleepVsYieldData.push({ x: h, y: dayYield, day: day });
@@ -1075,6 +1089,8 @@
             const totalDays = getDaysInMonth(state.viewYear, state.viewMonth);
             const today = todayStr();
 
+            // NOTE: The Consistency Heatmap Matrix intentionally consumes ALL tasks
+            // (General + Personal) and is exempt from the General-only analytics filter.
             const allUniqueTasks = {};
             for (let d = 1; d <= totalDays; d++) {
                 const key = formatDateKey(state.viewYear, state.viewMonth, d);
@@ -1179,7 +1195,8 @@
 
         function updateAnalytics() {
             const allTasks = state.tasksByDay[state.selectedDateStr] || [];
-            const tasks = filterCountableTasks(allTasks);
+            // Dashboard analytics (Execution Meter + Daily Summary) consumes GENERAL tasks only
+            const tasks = filterAnalyticsTasks(allTasks);
             const total = tasks.length;
             const completed = tasks.filter(t => t.completed).length;
             const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -1281,7 +1298,7 @@
                 }
             });
 
-            const ctxCat = document.getElementById('categoryDistributionChart').getContext('2d');
+                  const ctxCat = document.getElementById('categoryDistributionChart').getContext('2d');
             categoryDistributionChartInstance = new Chart(ctxCat, {
                 type: 'doughnut',
                 data: {
